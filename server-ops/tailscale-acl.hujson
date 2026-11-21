@@ -1,0 +1,28 @@
+// VOLITELNA SABLONA: Pouzij POUZE pokud bys nekdy chtel prepnout z Node Sharing
+// na Pre-Auth Key (pridani kamaradu primo do tveho tailnetu bez zakladani uctu).
+// V zakladnim rezimu (Node Sharing) TENTO SOUBOR VUBEC NEPOTREBUJES!
+//
+// Pokud ho nekdy pouzijes:
+// 1. V Tailscale Admin -> Machines pridej dell5290 tag "tag:mc-server"
+// 2. V Tailscale Admin -> Access Controls vloz tuto politiku
+// 3. Vygeneruj Reusable Pre-Auth Key s tagem "tag:mc-player"
+{
+  "tagOwners": {
+    "tag:mc-server": ["autogroup:admin"],
+    "tag:mc-player": ["autogroup:admin"]
+  },
+  "acls": [
+    // Ty jako admin vidis vsechny svoje stroje (dell5290, cachyos-x8664, ...)
+    {
+      "action": "accept",
+      "src": ["autogroup:admin"],
+      "dst": ["*:*"]
+    },
+    // Kamaradi s tag:mc-player vidi VYHRADNE Minecraft port 25565 na dell5290 (zadne SSH, zadne tvoje PC!)
+    {
+      "action": "accept",
+      "src": ["tag:mc-player"],
+      "dst": ["tag:mc-server:25565"]
+    }
+  ]
+}

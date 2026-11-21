@@ -1,0 +1,5 @@
+[
+  {"version":2},
+  {"ingredient":{"id":"confluence:swiftness_potion"},"type":"item_stack","bookmarkType":"INGREDIENT"},
+  {"ingredient":{"id":"terra_curio:depth_meter","components":{"confluence:prefix":{"tier":2,"value":0.44,"type":"accessory","name":"quick","modifiers":{"minecraft:generic.movement_speed":{"id":"confluence:accessory_prefix_0dede2dd51644817bdb5eba610cadb0e","amount":0.03999999910593033,"operation":"add_multiplied_total"}}},"confluence_magic_lib:mod_rarity":{"name":"orange","color":16763030},"confluence:value":2520,"confluence_magic_lib:nbt":{}}},"type":"item_stack","bookmarkType":"INGREDIENT"}
+]

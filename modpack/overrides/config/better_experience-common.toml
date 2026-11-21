@@ -1,0 +1,57 @@
+[Item]
+	#Apply potion automatically without consuming. Support Inventory, Safe, Piggy Bank and Ender Chest.
+	auto_potion_open = true
+	#How many potion stack could apply without consuming automatically?
+	# Default: 10
+	# Range: 1 ~ 9999
+	auto_potion_stack_size = 10
+	#How many items to scan per tick for infinite potion?
+	# Default: 2
+	# Range: 1 ~ 10
+	auto_potion_scan_item_per_tick = 2
+	#Instantly Drink
+	instantly_drink = false
+	#Should the player have infinite ammo?
+	infinite_ammo = false
+	#How many ammo stack could apply without consuming automatically?
+	# Default: 3996
+	# Range: 64 ~ 9999
+	infinite_ammo_stack_size = 3996
+	#Not consume summon item?
+	no_consume_summoner = false
+	#Better reinforced tool.
+	better_reinforced_tool = true
+	#Modify Max Stack Size
+	modify_max_stack_size = false
+	#Forbidden magic boom staff.
+	forbidden_magic_boom_staff = false
+
+[Player]
+	#Fill life on respawn.
+	fill_life_on_respawn = false
+	#Additional fall distance for players.
+	# Default: 0
+	# Range: 0 ~ 100
+	additional_fall_distance = 0
+	#Multi fish.
+	server_multi_fishing = true
+	#Block Break Speed Multiplier
+	# Default: 1.0
+	# Range: 0.1 ~ 100.0
+	block_break_speed_multiplier = 1.0
+	#Auto Save Money.
+	auto_save_money = true
+	#Quick JEI Fetch.
+	quick_jei_fetch = true
+
+[World]
+	#Stone sapling tree grows without strict conditions.
+	stone_sapling_tree_no_strict = false
+	#Herb growth without strict conditions.
+	herb_growth_no_strict = false
+	#Valid bonemeal target.
+	valid_bonemeal_target = true
+
+[Entity]
+	#Forbidden slime to generate lava?
+	slime_die_no_lava = true

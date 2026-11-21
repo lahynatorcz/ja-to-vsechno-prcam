@@ -1,0 +1,14 @@
+{
+  "server_name": "Já to všechno prcám",
+  "server_ip": "100.94.182.28",
+  "server_port": 25565,
+  "mc_version": "1.21.1",
+  "neoforge_version": "21.1.228",
+  "portablemc_version": "5.0.6",
+  "tailscale_share_url": "",
+  "gitlab_base_url": "https://gitlab.com",
+  "gitlab_project_id": "",
+  "gitlab_package_name": "modpack-mods",
+  "gitlab_package_version": "1.0-bop",
+  "gitlab_read_token": ""
+}

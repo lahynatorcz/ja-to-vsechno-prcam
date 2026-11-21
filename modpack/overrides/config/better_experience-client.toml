@@ -1,0 +1,4 @@
+#Show outlines
+show_outlines = true
+#Multi Fishing
+client_multi_fishing = false

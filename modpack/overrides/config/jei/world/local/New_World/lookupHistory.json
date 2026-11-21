@@ -1,0 +1,18 @@
+[
+  {"version":1},
+  {"ingredient":{"id":"sophisticatedbackpacks:stack_upgrade_starter_tier"},"type":"item_stack","bookmarkType":"INGREDIENT"},
+  {"ingredient":{"id":"sophisticatedbackpacks:upgrade_base"},"type":"item_stack","bookmarkType":"INGREDIENT"},
+  {"ingredient":{"id":"minecraft:copper_ingot"},"type":"item_stack","bookmarkType":"INGREDIENT"},
+  {"ingredient":{"id":"sophisticatedbackpacks:stack_upgrade_tier_1"},"type":"item_stack","bookmarkType":"INGREDIENT"},
+  {"ingredient":{"id":"sophisticatedbackpacks:diamond_backpack","components":{"gravestonecurioscompat:curio_slot_data":{"slotType":"back","slotIndex":0,"wasEquipped":true},"sophisticatedcore:number_of_inventory_slots":108,"sophisticatedcore:storage_uuid":[-1010487618,-340636095,-1294747270,1904683779],"sophisticatedcore:number_of_upgrade_slots":5,"sophisticatedcore:render_info_tag":{"upgradeItems":[{},{},{},{},{}]}}},"type":"item_stack","bookmarkType":"INGREDIENT"},
+  {"ingredient":{"id":"sophisticatedbackpacks:gold_backpack","components":{"gravestonecurioscompat:curio_slot_data":{"slotType":"back","slotIndex":0,"wasEquipped":true},"sophisticatedcore:number_of_inventory_slots":81,"sophisticatedcore:storage_uuid":[-1010487618,-340636095,-1294747270,1904683779],"sophisticatedcore:number_of_upgrade_slots":3,"sophisticatedcore:render_info_tag":{"upgradeItems":[{},{},{}]}}},"type":"item_stack","bookmarkType":"INGREDIENT"},
+  {"ingredient":{"id":"sophisticatedbackpacks:iron_backpack","components":{"gravestonecurioscompat:curio_slot_data":{"slotType":"back","slotIndex":0,"wasEquipped":true},"sophisticatedcore:number_of_inventory_slots":54,"sophisticatedcore:storage_uuid":[-1010487618,-340636095,-1294747270,1904683779],"sophisticatedcore:number_of_upgrade_slots":2,"sophisticatedcore:render_info_tag":{"upgradeItems":[{},{}]}}},"type":"item_stack","bookmarkType":"INGREDIENT"},
+  {"ingredient":{"id":"confluence:ammo_reservation_potion"},"type":"item_stack","bookmarkType":"INGREDIENT"},
+  {"ingredient":{"id":"minecraft:obsidian"},"type":"item_stack","bookmarkType":"INGREDIENT"},
+  {"ingredient":{"id":"confluence:sturdy_fossil"},"type":"item_stack","bookmarkType":"INGREDIENT"},
+  {"ingredient":{"id":"confluence_dimension_patch:terrarium"},"type":"item_stack","bookmarkType":"INGREDIENT"},
+  {"ingredient":{"id":"minecraft:flow_pottery_sherd"},"type":"item_stack","bookmarkType":"INGREDIENT"},
+  {"ingredient":{"id":"confluence:heim"},"type":"item_stack","bookmarkType":"INGREDIENT"},
+  {"ingredient":{"id":"minecraft:diamond"},"type":"item_stack","bookmarkType":"INGREDIENT"},
+  {"ingredient":{"id":"sophisticatedbackpacks:backpack","components":{"sophisticatedcore:number_of_inventory_slots":27,"sophisticatedcore:storage_uuid":[-1010487618,-340636095,-1294747270,1904683779],"sophisticatedcore:number_of_upgrade_slots":1,"sophisticatedcore:render_info_tag":{"upgradeItems":[{}]}}},"type":"item_stack","bookmarkType":"INGREDIENT"}
+]

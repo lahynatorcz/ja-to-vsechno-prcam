@@ -1,0 +1,5 @@
+[
+  {"version":2},
+  {"ingredient":{"id":"confluence:swiftness_potion"},"type":"item_stack","bookmarkType":"INGREDIENT"},
+  {"ingredient":{"id":"confluence:regeneration_potion"},"type":"item_stack","bookmarkType":"INGREDIENT"}
+]

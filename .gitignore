@@ -1,0 +1,17 @@
+# Tajne promenne pro nahravani na GitLab (nikdy necommitovat!)
+.env
+server-ops/.env
+
+# Docasne a lokalni klientske soubory
+player.json
+.runtime/
+mods-cache/
+mods-bundle/
+dist/
+*.log
+*.zip
+
+# OS soubory
+.DS_Store
+Thumbs.db
+desktop.ini
