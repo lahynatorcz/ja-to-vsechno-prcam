@@ -14,13 +14,11 @@ if [[ "${1:-}" == "--upload" ]]; then
     UPLOAD=1
 fi
 
-if [[ ! -d "$SERVER_DIR/mods" ]]; then
-    echo "CHYBA: Nenalezena slozka serveru: $SERVER_DIR/mods" >&2
-    exit 1
-fi
+MODS_BUNDLE_DIR="$REPO_DIR/mods-bundle"
 
-echo "[1/3] Generuji $LOCK_FILE ze slozek serveru ($SERVER_DIR)..."
-python3 - "$SERVER_DIR" "$LOCK_FILE" <<'PY'
+if [[ -d "$SERVER_DIR/mods" ]]; then
+    echo "[1/3] Generuji $LOCK_FILE ze slozek serveru ($SERVER_DIR)..."
+    python3 - "$SERVER_DIR" "$LOCK_FILE" <<'PY'
 import hashlib, json, os, re, sys
 from datetime import datetime, timezone
 
@@ -73,9 +71,16 @@ with open(lock_file, "w", encoding="utf-8") as f:
 print(f"Hotovo: {len(entries)} modu, celkem {total_bytes / (1024*1024):.1f} MiB.")
 PY
 
-echo "[2/3] Synchronizuji serverove skripty do server-ops/..."
-cp -a "$SERVER_DIR/start-server.sh" "$SERVER_DIR/_run-loop.sh" "$SERVER_DIR/stop-server.sh" "$SERVER_DIR/user_jvm_args.txt" "$REPO_DIR/server-ops/"
-cp -a "$SERVER_DIR/server.properties" "$REPO_DIR/server-ops/server.properties.template"
+    echo "[2/3] Synchronizuji serverove skripty do server-ops/..."
+    cp -a "$SERVER_DIR/start-server.sh" "$SERVER_DIR/_run-loop.sh" "$SERVER_DIR/stop-server.sh" "$SERVER_DIR/user_jvm_args.txt" "$REPO_DIR/server-ops/"
+    cp -a "$SERVER_DIR/server.properties" "$REPO_DIR/server-ops/server.properties.template"
+elif [[ -d "$MODS_BUNDLE_DIR" && -f "$LOCK_FILE" ]]; then
+    echo "[1/3] Pouzivam existujici $LOCK_FILE a lokalni slozku mods-bundle/ ($MODS_BUNDLE_DIR)."
+    echo "[2/3] Preskakuji synchronizaci server-ops/ (nebezim na serveru dell5290)."
+else
+    echo "CHYBA: Nenalezena ani slozka serveru ($SERVER_DIR/mods), ani lokalni slozka ($MODS_BUNDLE_DIR)." >&2
+    exit 1
+fi
 
 if [[ $UPLOAD -eq 0 ]]; then
     echo "[3/3] Preskakuji upload na GitLab (spust s parametrem --upload po nastaveni server-ops/.env)."
@@ -100,10 +105,10 @@ PKG="${GITLAB_PACKAGE_NAME:-modpack-mods}"
 VER="${GITLAB_PACKAGE_VERSION:-1.0-bop}"
 
 echo "[3/3] Nahravam mody do GitLab Generic Package Registry ($BASE, projekt $GITLAB_PROJECT_ID, balik $PKG/$VER)..."
-python3 - "$LOCK_FILE" "$SERVER_DIR" "$BASE" "$GITLAB_PROJECT_ID" "$PKG" "$VER" "$GITLAB_UPLOAD_TOKEN" <<'PY'
+python3 - "$LOCK_FILE" "$SERVER_DIR" "$MODS_BUNDLE_DIR" "$BASE" "$GITLAB_PROJECT_ID" "$PKG" "$VER" "$GITLAB_UPLOAD_TOKEN" <<'PY'
 import json, os, subprocess, sys, urllib.request, urllib.error
 
-lock_file, server_dir, base, proj_id, pkg, ver, token = sys.argv[1:]
+lock_file, server_dir, bundle_dir, base, proj_id, pkg, ver, token = sys.argv[1:]
 with open(lock_file, "r", encoding="utf-8") as f:
     lock = json.load(f)
 
@@ -142,6 +147,11 @@ for idx, m in enumerate(lock["mods"], 1):
         skipped += 1
         continue
     src = os.path.join(server_dir, "mods" if m["side"] == "both" else "mods_client_only", fname)
+    if not os.path.isfile(src):
+        src = os.path.join(bundle_dir, fname)
+    if not os.path.isfile(src):
+        print(f"CHYBA: Nenalezen soubor {fname} ani v {server_dir}, ani v {bundle_dir}!", file=sys.stderr)
+        sys.exit(1)
     upload_url = f"{base}/api/v4/projects/{proj_id}/packages/generic/{pkg}/{ver}/{pkg_file}"
     print(f"  [{idx}/{total}] Upload: {fname} -> {pkg_file}")
     res = subprocess.run(
