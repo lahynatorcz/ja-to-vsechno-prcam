@@ -1,6 +1,8 @@
-# Tajne promenne pro nahravani na GitLab (nikdy necommitovat!)
+# Tajne promenne a tokeny pro GitHub / Tailscale (NIKDY necommitovat!)
 .env
+*.env
 server-ops/.env
+config.local.json
 
 # Docasne a lokalni klientske soubory
 player.json

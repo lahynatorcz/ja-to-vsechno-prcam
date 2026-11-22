@@ -1,11 +1,12 @@
 # Já to všechno prcám — Minecraft 1.21.1 (NeoForge 21.1.228)
 
-Centrální repozitář pro náš soukromý modovaný Minecraft server (**Confluence: Otherworld + Biomes O' Plenty**).
+Centrální soukromý repozitář pro náš modovaný Minecraft server (**Confluence: Otherworld + Biomes O' Plenty**).
 Obsahuje konfigurace, SHA256 lockfile všech 66 klientských modů, multiplatformní klienty (Windows / Linux / macOS) a správu serveru.
 
-> **Architektura bez nafukování Gitu:**
-> - **V Gitu (< 1 MB):** skripty, konfigurace (`modpack/overrides/`), `config.json` a `modpack/mods-lock.json` (seznam modů + SHA256).
-> - **V GitLab Generic Package Registry (~280 MB):** samotné `.jar` mody. Klientský spouštěč při každém zapnutí porovná SHA256, stáhne jen nové/změněné mody a smaže vyřazené.
+> **Architektura a bezpečnost (Zero-Leak):**
+> - **V Gitu (< 1 MB):** jen skripty, konfigurace (`modpack/overrides/`), čistý `config.json` (bez tokenů a bez Tailscale odkazu) a `modpack/mods-lock.json` (seznam modů + SHA256).
+> - **V GitHub Releases (~280 MB):** všech 66 `.jar` modů jako přílohy release `mods-1.0-bop` v **Private** repu `lahynatorcz/ja-to-vsechno-prcam`.
+> - **Žádné tajné údaje v Gitu:** oba Fine-grained PAT tokeny i Tailscale share odkaz žijí výhradně v lokálním `server-ops/.env` (v `.gitignore`, chráněno i git `pre-commit` hookem). Do klientského ZIPu se při balení injektuje jen **Read-only** token a Tailscale share link.
 
 ---
 
@@ -33,32 +34,30 @@ Obsahuje konfigurace, SHA256 lockfile všech 66 klientských modů, multiplatfor
 
 ---
 
-## Pro majitele serveru (`dell5290`) — napojení na GitLab.com (3 minuty)
+## Pro majitele serveru (`dell5290`) — napojení na GitHub (Private repo)
 
-1. Na [gitlab.com](https://gitlab.com) založ nový **soukromý (Private)** projekt (např. `ja-to-vsechno-prcam`) **bez** README.
-2. V projektu zkopíruj **Project ID** (číslo pod názvem projektu) a v `Settings -> Access Tokens` vytvoř **2 Project Access Tokeny**:
-   - **`upload-bot`** (role *Maintainer*, scope **`api`**) -> jen pro tebe na `dell5290` do `server-ops/.env` (nikdy se necommituje!).
-   - **`hraci-readonly`** (role *Reporter*, scopy **`read_api` + `read_repository`**) -> jen pro čtení, patří do `config.json` (`gitlab_read_token`), takže si kamarádi nemusí zakládat účet na GitLabu.
-3. Vyplň do `config.json`:
-   - `gitlab_project_id`
-   - `gitlab_read_token` (ten **read-only** token!)
-   - `tailscale_share_url` (tvůj Reusable Share Link na `dell5290` z [Tailscale Admin](https://login.tailscale.com/admin/machines))
-4. Zkopíruj `server-ops/.env.example` na `server-ops/.env` a vyplň `GITLAB_PROJECT_ID` + `GITLAB_UPLOAD_TOKEN`.
-5. Nahraj mody do GitLab Package Registry, pushni repo a zabal balíček pro kamarády:
+1. Na [github.com/new](https://github.com/new) založ prázdný **Private** repozitář **`lahynatorcz/ja-to-vsechno-prcam`** (bez README, bez `.gitignore`, bez License).
+2. V **GitHub Settings → Developer settings → Personal access tokens → Fine-grained tokens** vytvoř **2 samostatné tokeny** omezené **výhradně** na repozitář `ja-to-vsechno-prcam`:
+   - **`ja-to-vsechno-prcam-upload`** (jen pro tebe): `Repository permissions → Contents: Read and write`.
+   - **`ja-to-vsechno-prcam-players-ro`** (jen pro kamarády): `Repository permissions → Contents: Read-only` (platnost max 1 rok).
+3. Zkopíruj `server-ops/.env.example` na `server-ops/.env` (`chmod 600 server-ops/.env`) a vyplň:
+   - `GITHUB_UPLOAD_TOKEN` (tvůj **Read and write** token)
+   - `GITHUB_READ_TOKEN` (**Read-only** token pro kamarády)
+   - `TAILSCALE_SHARE_URL` (tvůj Reusable Share Link na `dell5290` z [Tailscale Admin](https://login.tailscale.com/admin/machines))
+4. Pushni repozitář na GitHub (bez uložení tokenu do `.git/config`), nahraj všech 66 modů do GitHub Release a zabal klientský ZIP:
    ```bash
+   ./server-ops/git-push.sh
    ./server-ops/publish-modpack.sh --upload
-   git add -A && git commit -m "Napojeni na GitLab a Tailscale share link"
-   git remote add origin https://gitlab.com/<TVUJ_UCET>/ja-to-vsechno-prcam.git
-   git push -u origin main
    ./server-ops/pack-client-zip.sh
    ```
-6. Výsledný soubor `dist/Ja-to-vsechno-prcam-KLIENT-WINDOWS.zip` (< 1 MB!) hoď kamarádům na Discord.
+5. Výsledný soubor `dist/Ja-to-vsechno-prcam-KLIENT-WINDOWS.zip` (< 1 MB) pošli kamarádům do soukromého chatu (nikdy veřejně — obsahuje read-only token pro Private repo).
 
 ### Jak v budoucnu přidat nebo upravit mod?
 1. Přidej/odstraň `.jar` na serveru (`confluence-server/mods/` nebo `mods_client_only/`).
 2. Spusť:
    ```bash
    ./server-ops/publish-modpack.sh --upload
-   git add modpack/mods-lock.json && git commit -m "Update modu" && git push
+   git add modpack/mods-lock.json && git commit -m "Update modu"
+   ./server-ops/git-push.sh
    ```
-3. Kamarádi nic nového nestahují — příště jen kliknou na svou ikonu na Plochu a klient si sám stáhne jen ten jeden nový `.jar`!
+3. Kamarádi nic nového nestahují — příště jen kliknou na ikonu na Plochu a klient si sám stáhne jen ten nový/změněný `.jar` a vyřazené smaže!

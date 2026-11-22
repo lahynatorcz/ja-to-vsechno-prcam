@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Delta-synchronizace modu a konfiguraci podle modpack/mods-lock.json (Linux / macOS)
+# Podporuje Private i Public GitHub repozitare (GitHub Releases).
 set -euo pipefail
 
 if [[ $# -lt 2 ]]; then
@@ -13,8 +14,14 @@ LOCAL_MODS_SOURCE="${3:-}"
 
 mkdir -p "$INSTANCE_DIR/mods"
 
+# Pokud bezime lokalne z naklonovaneho repa a existuje server-ops/.env, muzeme z nej bezpecne vzit read-only token
+if [[ -z "${GITHUB_READ_TOKEN:-}" && -f "$REPO_ROOT/server-ops/.env" ]]; then
+    GITHUB_READ_TOKEN="$(bash -c 'source "$1" >/dev/null 2>&1 && printf "%s" "${GITHUB_READ_TOKEN:-}"' _ "$REPO_ROOT/server-ops/.env" || true)"
+    export GITHUB_READ_TOKEN
+fi
+
 python3 - "$REPO_ROOT" "$INSTANCE_DIR" "$LOCAL_MODS_SOURCE" <<'PY'
-import hashlib, json, os, shutil, sys, urllib.request, urllib.error
+import hashlib, json, os, shutil, sys, urllib.error, urllib.parse, urllib.request
 
 repo_root, instance_dir, local_src = sys.argv[1], sys.argv[2], sys.argv[3]
 cfg_path = os.path.join(repo_root, "config.json")
@@ -23,25 +30,61 @@ lock_path = os.path.join(repo_root, "modpack", "mods-lock.json")
 with open(cfg_path, "r", encoding="utf-8") as f:
     cfg = json.load(f)
 
-token = (cfg.get("gitlab_read_token") or "").strip()
-proj_id = str(cfg.get("gitlab_project_id") or "").strip()
-base = (cfg.get("gitlab_base_url") or "https://gitlab.com").rstrip("/")
-headers = {"PRIVATE-TOKEN": token} if token else {}
+gh_repo = (cfg.get("github_repo") or "").strip()
+gh_tag = (cfg.get("github_release_tag") or "mods-1.0-bop").strip()
+token = (cfg.get("github_read_token") or os.environ.get("GITHUB_READ_TOKEN") or "").strip()
 
-# 1. Pokud je napojeny GitLab, stahneme nejnovejsi mods-lock.json
-if proj_id:
-    raw_url = f"{base}/api/v4/projects/{proj_id}/repository/files/modpack%2Fmods-lock.json/raw?ref=main"
+base_headers = {
+    "User-Agent": "ja-to-vsechno-prcam-client",
+    "X-GitHub-Api-Version": "2022-11-28",
+}
+if token:
+    base_headers["Authorization"] = f"Bearer {token}"
+
+api_headers = {**base_headers, "Accept": "application/vnd.github+json"}
+raw_headers = {**base_headers, "Accept": "application/vnd.github.raw+json"}
+
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+no_redirect_opener = urllib.request.build_opener(NoRedirectHandler)
+
+def download_github_asset(asset_api_url, dst_part):
+    req = urllib.request.Request(
+        asset_api_url,
+        headers={**base_headers, "Accept": "application/octet-stream"},
+    )
     try:
-        print("[SYNC] Kontroluji nejnovejsi seznam modu na GitLabu...")
-        req = urllib.request.Request(raw_url, headers=headers)
+        with no_redirect_opener.open(req, timeout=120) as resp, open(dst_part, "wb") as out:
+            shutil.copyfileobj(resp, out)
+            return
+    except urllib.error.HTTPError as e:
+        if e.code in (301, 302, 303, 307, 308):
+            redirect_url = e.headers.get("Location")
+            if not redirect_url:
+                raise RuntimeError(f"GitHub vratil presmerovani ({e.code}) bez Location.")
+            # Podepsana URL (Azure/S3) nesmi dostat GitHub Authorization hlavicku!
+            dl_req = urllib.request.Request(redirect_url, headers={"User-Agent": "ja-to-vsechno-prcam-client"})
+            with urllib.request.urlopen(dl_req, timeout=180) as resp, open(dst_part, "wb") as out:
+                shutil.copyfileobj(resp, out)
+                return
+        raise
+
+# 1. Pokud je napojeny GitHub, stahneme nejnovejsi mods-lock.json
+if gh_repo:
+    raw_url = f"https://api.github.com/repos/{gh_repo}/contents/modpack/mods-lock.json?ref=main"
+    try:
+        print("[SYNC] Kontroluji nejnovejsi seznam modu na GitHubu...")
+        req = urllib.request.Request(raw_url, headers=raw_headers)
         with urllib.request.urlopen(req, timeout=20) as resp:
             raw = resp.read()
         json.loads(raw.decode("utf-8"))
         with open(lock_path, "wb") as f:
             f.write(raw)
-        print("[OK]   mods-lock.json aktualizovan z GitLabu.")
+        print("[OK]   mods-lock.json aktualizovan z GitHubu.")
     except Exception as e:
-        print(f"[WARN] Nepodarilo se stahnout mods-lock.json z GitLabu ({e}), pouzivam lokalni kopii.")
+        print(f"[WARN] Nepodarilo se stahnout mods-lock.json z GitHubu ({e}), pouzivam lokalni kopii.")
 
 with open(lock_path, "r", encoding="utf-8") as f:
     lock = json.load(f)
@@ -74,9 +117,7 @@ for fname in os.listdir(mods_dir):
 total = len(lock["mods"])
 kept = 0
 updated = 0
-
-pkg = cfg.get("gitlab_package_name", "modpack-mods")
-ver = cfg.get("gitlab_package_version", "1.0-bop")
+asset_map = None
 
 for idx, m in enumerate(lock["mods"], 1):
     fname = m["file"]
@@ -101,23 +142,48 @@ for idx, m in enumerate(lock["mods"], 1):
     if copied:
         continue
 
-    if not proj_id:
+    if not gh_repo:
         raise SystemExit(
-            f"CHYBA: Chybi mod '{fname}' a neni nastaven gitlab_project_id v config.json (ani lokalni slozka modu)."
+            f"CHYBA: Chybi mod '{fname}' a neni nastaven github_repo v config.json (ani lokalni slozka modu)."
         )
 
+    # Lazy nacteni seznamu assetu z GitHub Release
+    if asset_map is None:
+        print(f"[SYNC] Nacitam seznam modu z GitHub Release ({gh_repo} @ {gh_tag})...")
+        rel_url = f"https://api.github.com/repos/{gh_repo}/releases/tags/{urllib.parse.quote(gh_tag, safe='')}"
+        try:
+            with urllib.request.urlopen(urllib.request.Request(rel_url, headers=api_headers), timeout=30) as resp:
+                release = json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            raise SystemExit(f"CHYBA pri nacitani GitHub Release '{gh_tag}' z '{gh_repo}': {e}")
+
+        asset_map = {}
+        page = 1
+        while True:
+            aurl = f"https://api.github.com/repos/{gh_repo}/releases/{release['id']}/assets?per_page=100&page={page}"
+            with urllib.request.urlopen(urllib.request.Request(aurl, headers=api_headers), timeout=30) as resp:
+                batch = json.loads(resp.read().decode("utf-8"))
+            if not batch:
+                break
+            for a in batch:
+                asset_map[a["name"]] = a["url"]
+            if len(batch) < 100:
+                break
+            page += 1
+
     pkg_file = m.get("package_file") or fname
-    dl_url = f"{base}/api/v4/projects/{proj_id}/packages/generic/{pkg}/{ver}/{pkg_file}"
+    asset_url = asset_map.get(pkg_file) or asset_map.get(fname)
+    if not asset_url:
+        raise SystemExit(f"CHYBA: Mod '{fname}' ({pkg_file}) nebyl nalezen v GitHub Release '{gh_tag}'!")
+
     part = dst + ".part"
-    print(f"[SYNC] [{idx}/{total}] Stahuji z GitLabu: {fname}")
-    req = urllib.request.Request(dl_url, headers=headers)
+    print(f"[SYNC] [{idx}/{total}] Stahuji z GitHubu: {fname}")
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp, open(part, "wb") as out:
-            shutil.copyfileobj(resp, out)
+        download_github_asset(asset_url, part)
     except Exception as e:
         if os.path.exists(part):
             os.remove(part)
-        raise SystemExit(f"CHYBA pri stahovani '{fname}' z {dl_url}: {e}")
+        raise SystemExit(f"CHYBA pri stahovani '{fname}' z GitHub Release: {e}")
 
     got_sha = sha256_file(part)
     if got_sha != want_sha:

@@ -22,6 +22,64 @@ function Write-WarnMsg([string]$msg) {
     Write-Host "[WARN] $msg" -ForegroundColor Yellow
 }
 
+function Invoke-GitHubAssetDownload {
+    param(
+        [Parameter(Mandatory = $true)][string]$AssetApiUrl,
+        [Parameter(Mandatory = $true)][string]$OutFile,
+        [string]$Token = ""
+    )
+
+    $req = [System.Net.HttpWebRequest]::Create($AssetApiUrl)
+    $req.Method = "GET"
+    $req.AllowAutoRedirect = $false
+    $req.Accept = "application/octet-stream"
+    $req.UserAgent = "ja-to-vsechno-prcam-client"
+    $req.Timeout = 120000
+    $req.ReadWriteTimeout = 120000
+    $req.Headers.Add("X-GitHub-Api-Version", "2022-11-28")
+    if ($Token -ne "") {
+        $req.Headers.Add("Authorization", "Bearer $Token")
+    }
+
+    $resp = $null
+    try {
+        try {
+            $resp = $req.GetResponse()
+        } catch [System.Net.WebException] {
+            if ($_.Exception.Response) {
+                $resp = $_.Exception.Response
+            } else {
+                throw
+            }
+        }
+
+        $code = [int]$resp.StatusCode
+        if ($code -in @(301, 302, 303, 307, 308)) {
+            $redirectUrl = $resp.Headers["Location"]
+            $resp.Close()
+            $resp = $null
+            if (-not $redirectUrl) {
+                throw "GitHub vratil presmerovani ($code) bez hlavicky Location."
+            }
+            # Podepsana URL (Azure/S3) nesmi dostat GitHub Authorization hlavicku!
+            Invoke-WebRequest -Uri $redirectUrl -OutFile $OutFile -UseBasicParsing -TimeoutSec 180
+        } elseif ($code -eq 200) {
+            $inStream = $resp.GetResponseStream()
+            $outStream = [System.IO.File]::Create($OutFile)
+            try {
+                $inStream.CopyTo($outStream)
+            } finally {
+                $outStream.Close()
+                $inStream.Close()
+            }
+        } else {
+            throw "GitHub vratil HTTP $code pri stahovani assetu."
+        }
+    } finally {
+        if ($resp) { $resp.Close() }
+    }
+}
+
 $configPath = Join-Path $RepoRoot "config.json"
 if (-not (Test-Path $configPath)) {
     throw "Chybi soubor config.json na ceste: $configPath"
@@ -29,28 +87,43 @@ if (-not (Test-Path $configPath)) {
 $cfg = Get-Content -Raw -Encoding UTF8 $configPath | ConvertFrom-Json
 
 $lockPath = Join-Path $RepoRoot "modpack\mods-lock.json"
-$headers = @{}
-if ($cfg.gitlab_read_token -and $cfg.gitlab_read_token.Trim() -ne "") {
-    $headers["PRIVATE-TOKEN"] = $cfg.gitlab_read_token.Trim()
+$ghRepo = if ($cfg.github_repo) { $cfg.github_repo.ToString().Trim() } else { "" }
+$ghTag = if ($cfg.github_release_tag) { $cfg.github_release_tag.ToString().Trim() } else { "mods-1.0-bop" }
+$ghToken = if ($cfg.github_read_token) { $cfg.github_read_token.ToString().Trim() } else { "" }
+if ($ghToken -eq "" -and $env:GITHUB_READ_TOKEN) {
+    $ghToken = $env:GITHUB_READ_TOKEN.Trim()
 }
 
-# 1. Pokud je napojeny GitLab, stahneme nejnovejsi mods-lock.json (auto-update seznamu modu!)
-$hasGitlab = ($cfg.gitlab_project_id -and $cfg.gitlab_project_id.ToString().Trim() -ne "")
-if ($hasGitlab) {
-    $base = $cfg.gitlab_base_url.TrimEnd("/")
-    $proj = $cfg.gitlab_project_id.ToString().Trim()
-    $rawLockUrl = "$base/api/v4/projects/$proj/repository/files/modpack%2Fmods-lock.json/raw?ref=main"
+$apiHeaders = @{
+    "User-Agent"           = "ja-to-vsechno-prcam-client"
+    "X-GitHub-Api-Version" = "2022-11-28"
+    "Accept"               = "application/vnd.github+json"
+}
+$rawHeaders = @{
+    "User-Agent"           = "ja-to-vsechno-prcam-client"
+    "X-GitHub-Api-Version" = "2022-11-28"
+    "Accept"               = "application/vnd.github.raw+json"
+}
+if ($ghToken -ne "") {
+    $apiHeaders["Authorization"] = "Bearer $ghToken"
+    $rawHeaders["Authorization"] = "Bearer $ghToken"
+}
+
+# 1. Pokud je napojeny GitHub, stahneme nejnovejsi mods-lock.json (auto-update seznamu modu!)
+$hasGithub = ($ghRepo -ne "")
+if ($hasGithub) {
+    $rawLockUrl = "https://api.github.com/repos/$ghRepo/contents/modpack/mods-lock.json?ref=main"
     try {
-        Write-Step "Kontroluji nejnovejsi seznam modu na GitLabu..."
+        Write-Step "Kontroluji nejnovejsi seznam modu na GitHubu..."
         $tmpLock = Join-Path $env:TEMP "ja-to-vsechno-prcam-mods-lock.json"
-        Invoke-WebRequest -Uri $rawLockUrl -Headers $headers -OutFile $tmpLock -UseBasicParsing -TimeoutSec 20
+        Invoke-WebRequest -Uri $rawLockUrl -Headers $rawHeaders -OutFile $tmpLock -UseBasicParsing -TimeoutSec 20
         # Overeni ze jde o validni JSON
         $null = Get-Content -Raw -Encoding UTF8 $tmpLock | ConvertFrom-Json
         Copy-Item -Force $tmpLock $lockPath
         Remove-Item -Force $tmpLock -ErrorAction SilentlyContinue
-        Write-Ok "Seznam modu (mods-lock.json) je aktualni z GitLabu."
+        Write-Ok "Seznam modu (mods-lock.json) je aktualni z GitHubu."
     } catch {
-        Write-WarnMsg "Nepodarilo se stahnout aktualni mods-lock.json z GitLabu ($($_.Exception.Message)). Pouzivam lokalni kopii."
+        Write-WarnMsg "Nepodarilo se stahnout aktualni mods-lock.json z GitHubu ($($_.Exception.Message)). Pouzivam lokalni kopii."
     }
 }
 
@@ -90,6 +163,7 @@ $total = $lock.mods.Count
 $downloaded = 0
 $kept = 0
 $idx = 0
+$assetMap = $null
 
 foreach ($m in $lock.mods) {
     $idx++
@@ -120,24 +194,48 @@ foreach ($m in $lock.mods) {
         }
     }
 
-    if (-not $hasGitlab) {
-        throw "Chybi mod '$($m.file)' a v config.json neni nastaveny gitlab_project_id (ani lokalni slozka mods-bundle)."
+    if (-not $hasGithub) {
+        throw "Chybi mod '$($m.file)' a v config.json neni nastaveny github_repo (ani lokalni slozka mods-bundle)."
     }
 
-    $base = $cfg.gitlab_base_url.TrimEnd("/")
-    $proj = $cfg.gitlab_project_id.ToString().Trim()
-    $pkg = $cfg.gitlab_package_name
-    $ver = $cfg.gitlab_package_version
-    $pkgFile = if ($m.package_file) { $m.package_file } else { $m.file }
-    $dlUrl = "$base/api/v4/projects/$proj/packages/generic/$pkg/$ver/$pkgFile"
-    $tmpFile = "$targetPath.part"
+    # Lazy nacteni seznamu priloh GitHub Release (jen pokud je potreba neco stahovat)
+    if ($null -eq $assetMap) {
+        Write-Step "Nacitam seznam modu z GitHub Release ($ghRepo @ $ghTag)..."
+        $relUrl = "https://api.github.com/repos/$ghRepo/releases/tags/$([System.Uri]::EscapeDataString($ghTag))"
+        try {
+            $release = Invoke-RestMethod -Uri $relUrl -Headers $apiHeaders -TimeoutSec 30
+        } catch {
+            throw "Nepodarilo se nacist GitHub Release '$ghTag' z '$ghRepo': $($_.Exception.Message)"
+        }
 
-    Write-Step "[$idx/$total] Stahuji z GitLabu: $($m.file)"
+        $assetMap = @{}
+        $page = 1
+        while ($true) {
+            $assetsUrl = "https://api.github.com/repos/$ghRepo/releases/$($release.id)/assets?per_page=100&page=$page"
+            $batch = Invoke-RestMethod -Uri $assetsUrl -Headers $apiHeaders -TimeoutSec 30
+            if (-not $batch -or $batch.Count -eq 0) { break }
+            foreach ($a in $batch) {
+                $assetMap[$a.name] = $a.url
+            }
+            if ($batch.Count -lt 100) { break }
+            $page++
+        }
+    }
+
+    $pkgFile = if ($m.package_file) { $m.package_file } else { $m.file }
+    $assetUrl = $assetMap[$pkgFile]
+    if (-not $assetUrl) { $assetUrl = $assetMap[$m.file] }
+    if (-not $assetUrl) {
+        throw "Mod '$($m.file)' ($pkgFile) nebyl nalezen v GitHub Release '$ghTag'!"
+    }
+
+    $tmpFile = "$targetPath.part"
+    Write-Step "[$idx/$total] Stahuji z GitHubu: $($m.file)"
     try {
-        Invoke-WebRequest -Uri $dlUrl -Headers $headers -OutFile $tmpFile -UseBasicParsing -TimeoutSec 120
+        Invoke-GitHubAssetDownload -AssetApiUrl $assetUrl -OutFile $tmpFile -Token $ghToken
     } catch {
         Remove-Item -Force $tmpFile -ErrorAction SilentlyContinue
-        throw "Chyba pri stahovani '$($m.file)' z $dlUrl : $($_.Exception.Message)"
+        throw "Chyba pri stahovani '$($m.file)' z GitHub Release: $($_.Exception.Message)"
     }
 
     $dlHash = (Get-FileHash -Path $tmpFile -Algorithm SHA256).Hash.ToLowerInvariant()
